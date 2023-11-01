@@ -7,6 +7,7 @@ package main
 // go run mrcoordinator.go pg*.txt
 //
 // Please do not change this file.
+// OK ;) ZYX.
 //
 
 import "6.5840/mr"
@@ -15,7 +16,7 @@ import "os"
 import "fmt"
 
 func main() {
-	if len(os.Args) < 2 {
+	if len(os.Args) < 2 { // At least we have to input one .txt file. ZYX
 		fmt.Fprintf(os.Stderr, "Usage: mrcoordinator inputfiles...\n")
 		os.Exit(1)
 	}
