@@ -29,8 +29,8 @@ func (c *Coordinator) server() {
 	rpc.Register(c)
 	rpc.HandleHTTP()
 	//l, e := net.Listen("tcp", ":1234")
-	sockname := coordinatorSock() // I am a string. ZYX
-	os.Remove(sockname)
+	sockname := coordinatorSock() // I am a string. The string is made by system. You can render it as fixed. ZYX
+	os.Remove(sockname)           // Maybe for remove last rested file? ZYX
 	l, e := net.Listen("unix", sockname)
 	if e != nil {
 		log.Fatal("listen error:", e)
@@ -53,9 +53,8 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// First we call this function out of this package. ZYX
-
 	c := Coordinator{}
-
+	// We have to split original file to
 	// Your code here.
 
 	c.server()

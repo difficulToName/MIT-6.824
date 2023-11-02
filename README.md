@@ -24,4 +24,11 @@ To run this project, first you have to compile a dynamic lib file. (.dll for win
 
 Before we continue, we have to ease ourselves into rpc and http or etc. in Golang.
 
-rpc: rpc in Go is an encapsulated package. Here are some important methods in it:
+Rpc: rpc in Go is an encapsulated package. Here are some important methods in it:
+1. We pass a pointer to object to rpc by rpc.Register. Then client could call the method provided by object we passed to rpc.
+2. So called rpc.HandleHTTP() means that you tell rpc package to handle those RPC request were sent to HTTP server's /rpc path. Maybe our service would be called by HTTP protocol?
+However, we should notice that rpc implemented by Golang can be based on http but original RPC is not based on HTTP!
+3. Use rpc.DialHTTP would init a rpc request through http protocol, the server must have opened their http to receive that.
+
+Here we start the task! From MapReduce can we know: coordinator should split file into pieces and tell workers come in which file should they handle.
+
