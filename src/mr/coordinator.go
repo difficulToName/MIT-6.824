@@ -1,26 +1,41 @@
 package mr
 
-import "log"
+import (
+	"log"
+	"sync"
+)
 import "net"
 import "os"
 import "net/rpc"
 import "net/http"
 
 // I am coordinator, so after I was init, I should wait for workers get info from me. ZYX
-//
 
 type Coordinator struct {
 	// Your definitions here.
-
+	lock        sync.Mutex // This variable is for goroutine-safe.
+	files       []string
+	fileMapped  int // This pointer points to the next file should be mapped. ZYX
+	fileReduced int // This pointer points to same slice as above but shouldn't be front / right of above. ZYX
 }
 
 // Your code here -- RPC handlers for the worker to call.
-
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
-	reply.Y = args.X + 1
+func (c *Coordinator) TaskDistribute(ask *AskTask, reply *Reply) error {
+	// That is easy, if there is file unmapped we hand it to worker. ZYX
+	// When all files are mapped, then we start to reduce. ZYX
+	defer c.lock.Unlock()
+	c.lock.Lock()
+	if c.fileMapped != len(c.files) {
+		reply.WorkType = 0 // Map it! ZYX
+		reply.FileDir = c.files[c.fileMapped]
+		c.fileMapped++
+	} else if c.fileReduced != len(c.files) {
+		reply.WorkType = 1 // Reduce it! ZYX
+		reply.FileDir = c.files[c.fileReduced]
+		c.fileReduced++
+	} else {
+		reply.WorkType = 2 // Just break. ZYX
+	}
 	return nil
 }
 
@@ -41,11 +56,7 @@ func (c *Coordinator) server() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
-
-	// Your code here.
-
-	return ret
+	return c.fileReduced == len(c.files)
 }
 
 // create a Coordinator.
@@ -54,9 +65,12 @@ func (c *Coordinator) Done() bool {
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// First we call this function out of this package. ZYX
 	c := Coordinator{}
-	// We have to split original file to
-	// Your code here.
-
+	// At here we should notify Coordinator the filename we want to operate. ZYX
+	// Here we are in a function scope, so we just copy name in our struct. ZYX
+	// (Whisper) Doesn't golang got sth like std::move in C++? ZYX
+	for _, filename := range files {
+		c.files = append(c.files, filename)
+	}
 	c.server()
 	return &c
 }
