@@ -29,21 +29,21 @@ maybe_quiet() {
 }
 
 
-TIMEOUT=timeout
-TIMEOUT2=""
-if timeout 2s sleep 1 > /dev/null 2>&1
-then
-  :
-else
-  if gtimeout 2s sleep 1 > /dev/null 2>&1
-  then
-    TIMEOUT=gtimeout
-  else
-    # no timeout command
-    TIMEOUT=
-    echo '*** Cannot find timeout command; proceeding without timeouts.'
-  fi
-fi
+#TIMEOUT=timeout
+#TIMEOUT2=""
+#if timeout 2s sleep 1 > /dev/null 2>&1
+#then
+#  :
+#else
+#  if gtimeout 2s sleep 1 > /dev/null 2>&1
+#  then
+#    TIMEOUT=gtimeout
+#  else
+#    # no timeout command
+#    TIMEOUT=
+#    echo '*** Cannot find timeout command; proceeding without timeouts.'
+#  fi
+#fi
 if [ "$TIMEOUT" != "" ]
 then
   TIMEOUT2=$TIMEOUT

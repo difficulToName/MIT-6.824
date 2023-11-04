@@ -31,8 +31,10 @@ type AskTask struct {
 }
 
 type Reply struct {
-	WorkType int // Here we define 0 as map, 1 as reduce and 2 as sleep or job done
-	FileDir  string
+	WorkType     int // Here we define 0 as map, 1 as reduce and 2 as sleep or job done
+	FileDir      string
+	NReduce      int
+	FileSequence int
 }
 
 // Cook up a unique-ish UNIX-domain socket name

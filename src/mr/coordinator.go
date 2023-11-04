@@ -17,21 +17,26 @@ type Coordinator struct {
 	files       []string
 	fileMapped  int // This pointer points to the next file should be mapped. ZYX
 	fileReduced int // This pointer points to same slice as above but shouldn't be front / right of above. ZYX
+	nReduce     int
 }
 
 // Your code here -- RPC handlers for the worker to call.
 func (c *Coordinator) TaskDistribute(ask *AskTask, reply *Reply) error {
 	// That is easy, if there is file unmapped we hand it to worker. ZYX
 	// When all files are mapped, then we start to reduce. ZYX
+	reply.NReduce = c.nReduce
 	defer c.lock.Unlock()
 	c.lock.Lock()
-	if c.fileMapped != len(c.files) {
+	if c.fileMapped != len(c.files) { // When there still have file to be mapped. ZYX
 		reply.WorkType = 0 // Map it! ZYX
+		reply.FileSequence = c.fileMapped
 		reply.FileDir = c.files[c.fileMapped]
+		//fmt.Println(c.files[c.fileMapped])
 		c.fileMapped++
-	} else if c.fileReduced != len(c.files) {
+	} else if c.fileReduced != len(c.files) { // When it comes to this branch it means all files are mapped. ZYX
 		reply.WorkType = 1 // Reduce it! ZYX
 		reply.FileDir = c.files[c.fileReduced]
+		reply.FileSequence = c.fileReduced
 		c.fileReduced++
 	} else {
 		reply.WorkType = 2 // Just break. ZYX
@@ -65,6 +70,7 @@ func (c *Coordinator) Done() bool {
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// First we call this function out of this package. ZYX
 	c := Coordinator{}
+	c.nReduce = nReduce
 	// At here we should notify Coordinator the filename we want to operate. ZYX
 	// Here we are in a function scope, so we just copy name in our struct. ZYX
 	// (Whisper) Doesn't golang got sth like std::move in C++? ZYX

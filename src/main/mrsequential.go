@@ -23,7 +23,7 @@ type ByKey []mr.KeyValue
 //
 
 // for sorting by key. ZYX
-// ? Why they didn't use anonymous function ?
+// ? Why they didn't use anonymous function ? ZYX
 func (a ByKey) Len() int           { return len(a) }
 func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
@@ -92,7 +92,7 @@ func main() {
 		// this is the correct format for each line of Reduce output.
 		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
 
-		i = j // i = j here to jump over same key lest re-computation.
+		i = j // i = j here to jump over same key lest re-computation. ZYX
 
 	}
 
