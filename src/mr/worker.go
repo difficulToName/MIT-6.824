@@ -38,25 +38,34 @@ func ihash(key string) int {
 
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
-
 	// Here we implement our worker. ZYX
 	// Two parameter are sth like function pointer or std::function<> in C++. ZYX
-	ask_message := AskTask{}
-	ask_message.WorkerNumber = 10
-	reply := Reply{}
+	reply := new(Reply)
+	report := new(Report)
 	for {
-		call_success := call("Coordinator.TaskDistribute", &ask_message, &reply)
-		if !call_success || reply.WorkType == 2 {
-			// Sth goes wrong.
-			//fmt.Println("All job gets done and I will head home~")
-			break
-		} else if reply.WorkType == 1 {
-			reducing(reply.FileSequence, reply.NReduce, reducef)
-		} else {
-			mapping(reply.FileDir, mapf, reply.NReduce, reply.FileSequence)
-			//fmt.Println(reply.FileDir + "map finished.")
-		}
+		callSuccess := call("Coordinator.GetTask", reply, report)
 		time.Sleep(time.Second)
+		fmt.Println(reply)
+		if !callSuccess || reply.WorkType == 3 {
+			break
+		}
+		if reply.WorkType == 0 {
+			success := mapping(reply.FileName, mapf, reply.NReduce, reply.FileSequence)
+			if success {
+				report.FileSequence = reply.FileSequence
+				report.WorkType = 0
+				call("Coordinator.Report", &reply, &report)
+			}
+		} else if reply.WorkType == 1 {
+			success := reducing(reply.FileSequence, reply.NReduce, reducef)
+			if success {
+				reply.FileSequence = reply.FileSequence
+				report.WorkType = 1
+				call("Coordinator.Report", &reply, &report)
+			}
+		} else if reply.WorkType == 2 {
+			time.Sleep(time.Second)
+		}
 	}
 }
 
@@ -82,18 +91,19 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	return false
 }
 
-func mapping(filename string, mapf func(string, string) []KeyValue, nReduce int, fileSequence int) {
+func mapping(filename string, mapf func(string, string) []KeyValue, nReduce int, fileSequence int) bool {
 	var intermediate []KeyValue
 	file, errOpen := os.Open(filename)
 	defer file.Close()
 	if errOpen != nil {
-		fmt.Println("Opening file ", filename, " error")
-		return
+		//fmt.Println("Opening file ", filename, " error")
+		fmt.Println(errOpen.Error())
+		return false
 	}
 	content, errRead := ioutil.ReadAll(file)
 	if errRead != nil {
 		fmt.Println("Reading file ", filename, " error")
-		return
+		return false
 	}
 	temp := mapf(filename, string(content))
 	intermediate = append(intermediate, temp...)
@@ -120,14 +130,14 @@ func mapping(filename string, mapf func(string, string) []KeyValue, nReduce int,
 		jsonData, err := json.Marshal(buckets[i])
 		if err != nil {
 			fmt.Println("Convert slice to ", path, " failed.")
-			return
+			return false
 		}
 		ioutil.WriteFile(path, jsonData, os.ModePerm)
 	}
-
+	return true
 }
 
-func reducing(fileSequence int, nReduces int, reducef func(string, []string) string) {
+func reducing(fileSequence int, nReduces int, reducef func(string, []string) string) bool {
 	var intermediate []KeyValue
 	for i := 0; i < nReduces; i++ {
 		fileName := "mr-" + strconv.Itoa(fileSequence) + "-" + strconv.Itoa(i)
@@ -136,7 +146,7 @@ func reducing(fileSequence int, nReduces int, reducef func(string, []string) str
 		//fmt.Println("Origin file", len(jsonFile))
 		if err != nil {
 			fmt.Println("Open json file failed!")
-			return
+			return false
 		}
 
 		json.Unmarshal(jsonFile, &intermediate)
@@ -144,9 +154,9 @@ func reducing(fileSequence int, nReduces int, reducef func(string, []string) str
 	}
 	// Now we successfully get all json file to memory. ZYX
 	// Code below is copy from "mrsequential.go" ZYX
-	sort.Sort(ByKey(intermediate))
 	fileName := "mr-out-" + strconv.Itoa(fileSequence)
 	ofile, _ := os.Create(fileName)
+	sort.Sort(ByKey(intermediate))
 
 	i := 0
 	//fmt.Println(len(intermediate))
@@ -162,11 +172,11 @@ func reducing(fileSequence int, nReduces int, reducef func(string, []string) str
 			// Take objects have same key into a slice. ZYX
 		}
 		output := reducef(intermediate[i].Key, values) // Pass that slice to reducef. ZYX
-
+		// output is a string, and it is the len of values
 		// this is the correct format for each line of Reduce output.
 		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
 		i = j // i = j here to jump over same key lest re-computation. ZYX
 	}
 	ofile.Close()
-
+	return true
 }
