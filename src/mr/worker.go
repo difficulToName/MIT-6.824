@@ -13,66 +13,184 @@ import "log"
 import "net/rpc"
 import "hash/fnv"
 
+//
 // Map functions return a slice of KeyValue.
+//
 type KeyValue struct {
 	Key   string
 	Value string
 }
-
-// Morris generously said I could use his code : ) ZYX
 type ByKey []KeyValue
 
 func (a ByKey) Len() int           { return len(a) }
 func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
+//
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
+//
 func ihash(key string) int {
 	h := fnv.New32a()
 	h.Write([]byte(key))
 	return int(h.Sum32() & 0x7fffffff)
 }
 
+//
 // main/mrworker.go calls this function.
-
+//
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
-	// Here we implement our worker. ZYX
-	// Two parameter are sth like function pointer or std::function<> in C++. ZYX
-	reply := new(Reply)
-	report := new(Report)
+	// Your worker implementation here.
 	for {
-		callSuccess := call("Coordinator.GetTask", reply, report)
-		time.Sleep(time.Second)
-		fmt.Println(reply)
-		if !callSuccess || reply.WorkType == 3 {
+		ask := Ask{}
+		not := Notification{}
+		success := call("Coordinator.AskTask", &not, &ask)
+		//if ask.TaskType == 1 {
+		//	fmt.Println("In ", ask.ReduceSequence)
+		//}
+		if !success || ask.TaskType == 3 {
 			break
 		}
-		if reply.WorkType == 0 {
-			success := mapping(reply.FileName, mapf, reply.NReduce, reply.FileSequence)
-			if success {
-				report.FileSequence = reply.FileSequence
-				report.WorkType = 0
-				call("Coordinator.Report", &reply, &report)
+		if ask.TaskType == 0 {
+			// This branch is for mapping.
+			intermediate := []KeyValue{}
+			file, err := os.Open(ask.FileName)
+			if err != nil {
+				log.Fatalln("Open file error!")
 			}
-		} else if reply.WorkType == 1 {
-			success := reducing(reply.FileSequence, reply.NReduce, reducef)
-			if success {
-				reply.FileSequence = reply.FileSequence
-				report.WorkType = 1
-				call("Coordinator.Report", &reply, &report)
+			content, err := ioutil.ReadAll(file)
+			if err != nil {
+				log.Fatalln("Read file error!")
 			}
-		} else if reply.WorkType == 2 {
+			file.Close()
+
+			// We use mapf, which provided by func
+			kva := mapf(ask.FileName, string(content))
+			intermediate = append(intermediate, kva...)
+
+			// Then we make a bucket to store those intermediate files.
+			buckets := make([][]KeyValue, ask.Buckets)
+			for i := range buckets {
+				buckets[i] = []KeyValue{}
+			}
+			for _, value := range intermediate {
+				buckets[ihash(value.Key)%ask.Buckets] = append(buckets[ihash(value.Key)%ask.Buckets], value)
+			}
+
+			for i := range buckets {
+				pathName := "mr-" + strconv.Itoa(ask.FileSequence) + "-" + strconv.Itoa(i)
+				openFile, _ := ioutil.TempFile("", pathName+"*")
+				encode := json.NewEncoder(openFile)
+				for _, value := range buckets[i] {
+					err := encode.Encode(&value)
+					if err != nil {
+						log.Fatalln("Encode failed")
+					}
+				}
+				os.Rename(openFile.Name(), pathName)
+				openFile.Close()
+			}
+			not.TaskType = 0
+			not.FileNumber = ask.FileSequence
+			call("Coordinator.Notify", &not, &ask)
+		} else if ask.TaskType == 1 {
+			// Reducing here!
+			//fmt.Println(ask.ReduceSequence)
+			intermediate := []KeyValue{}
+			for i := 0; i < ask.FileAmount; i++ {
+				fileName := "mr-" + strconv.Itoa(i) + "-" + strconv.Itoa(ask.ReduceSequence)
+				file, err := os.Open(fileName)
+				if err != nil {
+					log.Fatalln("Open file failed!")
+				}
+				decode := json.NewDecoder(file)
+				for {
+					kv := KeyValue{}
+					err := decode.Decode(&kv)
+					if err != nil {
+						break
+					}
+					intermediate = append(intermediate, kv)
+				}
+				file.Close()
+			}
+			sort.Sort(ByKey(intermediate))
+
+			outputName := "mr-out-" + strconv.Itoa(ask.ReduceSequence)
+			//fmt.Println(outputName)
+			outputFile, _ := os.Create(outputName)
+
+			i := 0
+			for i < len(intermediate) {
+				j := i + 1
+				for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+					j++
+				}
+				// Here we got interval [i, j) ZYX.
+				values := []string{}
+				for k := i; k < j; k++ {
+					values = append(values, intermediate[k].Value)
+					// Take objects have same key into a slice. ZYX
+				}
+				output := reducef(intermediate[i].Key, values) // Pass that slice to reducef. ZYX
+
+				// this is the correct format for each line of Reduce output.
+				fmt.Fprintf(outputFile, "%v %v\n", intermediate[i].Key, output)
+
+				i = j // i = j here to jump over same key lest re-computation. ZYX
+			}
+			outputFile.Close()
+
+			not.TaskType = 1
+			not.ReduceNumber = ask.ReduceSequence
+			call("Coordinator.Notify", &not, &ask)
+
+		} else {
+			//fmt.Println("Sleep")
 			time.Sleep(time.Second)
 		}
 	}
+
+	// uncomment to send the Example RPC to the coordinator.
+	//CallExample()
+
 }
 
+//
+// example function to show how to make an RPC call to the coordinator.
+//
+// the RPC argument and reply types are defined in rpc.go.
+//
+func CallExample() {
+
+	// declare an argument structure.
+	args := ExampleArgs{}
+
+	// fill in the argument(s).
+	args.X = 99
+
+	// declare a reply structure.
+	reply := ExampleReply{}
+
+	// send the RPC request, wait for the reply.
+	// the "Coordinator.Example" tells the
+	// receiving server that we'd like to call
+	// the Example() method of struct Coordinator.
+	ok := call("Coordinator.Example", &args, &reply)
+	if ok {
+		// reply.Y should be 100.
+		fmt.Printf("reply.Y %v\n", reply.Y)
+	} else {
+		fmt.Printf("call failed!\n")
+	}
+}
+
+//
 // send an RPC request to the coordinator, wait for the response.
 // usually returns true.
 // returns false if something goes wrong.
-// This call function could be use directly.
+//
 func call(rpcname string, args interface{}, reply interface{}) bool {
 	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
 	sockname := coordinatorSock()
@@ -89,94 +207,4 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 
 	fmt.Println(err)
 	return false
-}
-
-func mapping(filename string, mapf func(string, string) []KeyValue, nReduce int, fileSequence int) bool {
-	var intermediate []KeyValue
-	file, errOpen := os.Open(filename)
-	defer file.Close()
-	if errOpen != nil {
-		//fmt.Println("Opening file ", filename, " error")
-		fmt.Println(errOpen.Error())
-		return false
-	}
-	content, errRead := ioutil.ReadAll(file)
-	if errRead != nil {
-		fmt.Println("Reading file ", filename, " error")
-		return false
-	}
-	temp := mapf(filename, string(content))
-	intermediate = append(intermediate, temp...)
-
-	// Next we have to use bucket to store. ZYX
-	// This part we can take guidance as reference. ZYX
-
-	buckets := make([][]KeyValue, nReduce)
-	for i := range buckets {
-		buckets[i] = []KeyValue{}
-	}
-
-	for _, kv := range intermediate {
-		// Here is ihash func comes in, ihash takes a string then output a integer. ZYX
-		buckets[ihash(kv.Key)%nReduce] = append(buckets[ihash(kv.Key)%nReduce], kv)
-	}
-
-	// Now we have to store buckets on disk.
-	// The guidance advise us to name intermediate file as
-	// mr-X-Y, where X is Map task number and Y is the reduce task number. ZYX
-	// For bucket we initialized,
-	for i := range buckets {
-		path := "mr-" + strconv.Itoa(fileSequence) + "-" + strconv.Itoa(i)
-		jsonData, err := json.Marshal(buckets[i])
-		if err != nil {
-			fmt.Println("Convert slice to ", path, " failed.")
-			return false
-		}
-		ioutil.WriteFile(path, jsonData, os.ModePerm)
-	}
-	return true
-}
-
-func reducing(fileSequence int, nReduces int, reducef func(string, []string) string) bool {
-	var intermediate []KeyValue
-	for i := 0; i < nReduces; i++ {
-		fileName := "mr-" + strconv.Itoa(fileSequence) + "-" + strconv.Itoa(i)
-		//fmt.Println(fileName)
-		jsonFile, err := ioutil.ReadFile(fileName)
-		//fmt.Println("Origin file", len(jsonFile))
-		if err != nil {
-			fmt.Println("Open json file failed!")
-			return false
-		}
-
-		json.Unmarshal(jsonFile, &intermediate)
-
-	}
-	// Now we successfully get all json file to memory. ZYX
-	// Code below is copy from "mrsequential.go" ZYX
-	fileName := "mr-out-" + strconv.Itoa(fileSequence)
-	ofile, _ := os.Create(fileName)
-	sort.Sort(ByKey(intermediate))
-
-	i := 0
-	//fmt.Println(len(intermediate))
-	for i < len(intermediate) {
-		j := i + 1
-		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
-			j++
-		}
-		// Here we got interval [i, j) ZYX.
-		values := []string{}
-		for k := i; k < j; k++ {
-			values = append(values, intermediate[k].Value)
-			// Take objects have same key into a slice. ZYX
-		}
-		output := reducef(intermediate[i].Key, values) // Pass that slice to reducef. ZYX
-		// output is a string, and it is the len of values
-		// this is the correct format for each line of Reduce output.
-		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
-		i = j // i = j here to jump over same key lest re-computation. ZYX
-	}
-	ofile.Close()
-	return true
 }

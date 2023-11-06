@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -11,108 +10,124 @@ import "os"
 import "net/rpc"
 import "net/http"
 
-// I am coordinator, so after I was init, I should wait for workers get info from me. ZYX
-
 type Coordinator struct {
 	// Your definitions here.
-	fileMapped   int
-	fileReduced  int
-	files        []string
-	mapStates    []int      // 0 for not work || 1 for processing || 2 for mapped
-	reduceStates []int      // 0 for not work || 1 for processing || 2 for reduced
-	nReduce      int        // intermediates
-	lock         sync.Mutex // This variable is for goroutine-safe.
+	ReduceAmount   int
+	MapAmount      int
+	FileNames      []string
+	MapFinished    int
+	ReduceFinished int
+	MapStatus      []int
+	ReduceStatus   []int
+	mutex          sync.Mutex
 }
 
-func (c *Coordinator) Report(reply *Reply, report *Report) {
-	// This function is to prevent a worker crashes and capture a task long time.
-	c.lock.Lock()
-	if report.WorkType == 0 {
-		c.mapStates[report.FileSequence] = 2
-		c.fileMapped++
+func (c *Coordinator) Notify(not *Notification, ask *Ask) error {
+	defer c.mutex.Unlock()
+	c.mutex.Lock()
+	if not.TaskType == 0 {
+		//fmt.Println("Map finish" + strconv.Itoa(not.ReduceNumber))
+		c.MapStatus[not.FileNumber] = 2
+		c.MapFinished++
+		//fmt.Println("Amount ", strconv.Itoa(c.MapAmount), " Finished ", c.MapFinished)
 	} else {
-		c.reduceStates[report.FileSequence] = 2
-		c.fileReduced++
-	}
-	c.lock.Unlock()
-	// This function should work with a goroutine, which turn those expired task to their origin state.
-}
-
-// Your code here -- RPC handlers for the worker to call.
-func (c *Coordinator) GetTask(reply *Reply, report *Report) error {
-	c.lock.Lock()
-	if c.fileMapped != len(c.mapStates) {
-		taskNumber := -1
-		for key, value := range c.mapStates {
-			if value == 0 { // This task still doesn't been handled.
-				taskNumber = key
-				break
-			}
-		}
-		// If there is file still not been mapped but can not allocate work.
-		// Let worker sleep.
-		if taskNumber == -1 {
-			reply.WorkType = 2
-			c.lock.Unlock()
-		} else {
-			reply.WorkType = 0
-			reply.NReduce = c.nReduce
-			reply.FileSequence = taskNumber
-			reply.FileName = c.files[taskNumber]
-			fmt.Println(c.files[taskNumber])
-			c.mapStates[taskNumber] = 1
-			c.lock.Unlock()
-			go func() {
-				time.Sleep(time.Duration(5) * time.Second)
-				c.lock.Lock()
-				if c.mapStates[taskNumber] == 1 {
-					c.mapStates[taskNumber] = 0
-				}
-				c.lock.Unlock()
-			}()
-		}
-	} else if c.fileReduced != len(c.reduceStates) {
-		taskNumber := -1
-		for key, value := range c.reduceStates {
-			if value == 0 { // No worker handled or handling this file.
-				taskNumber = key
-				break
-			}
-			// Still, sleep.
-			if taskNumber == -1 {
-				reply.WorkType = 2
-				c.lock.Unlock()
-			} else {
-				reply.WorkType = 1
-				reply.FileSequence = taskNumber
-				reply.NReduce = c.nReduce
-				c.reduceStates[taskNumber] = 1
-				c.lock.Unlock()
-				go func() {
-					time.Sleep(time.Duration(5) * time.Second)
-					c.lock.Lock()
-					if c.reduceStates[taskNumber] == 1 {
-						c.reduceStates[taskNumber] = 0
-					}
-					c.lock.Unlock()
-				}()
-			}
-		}
-	} else {
-		// All jobs get done, let's head for home!
-		c.lock.Unlock()
-		reply.WorkType = 3
+		//fmt.Println("Reduce finish" + strconv.Itoa(not.ReduceNumber))
+		c.ReduceStatus[not.ReduceNumber] = 2
+		c.ReduceFinished++
 	}
 	return nil
 }
 
+// Your code here -- RPC handlers for the worker to call.
+func (c *Coordinator) AskTask(not *Notification, ask *Ask) error {
+	// Fuck Fuck Fuck!
+	// Coordinator should reply tasks through parameter 2, namely, ask
+	// In this function coordinator return task through Ask.
+	// Because worker is stateless, so ask should be 0.
+	defer c.mutex.Unlock()
+	c.mutex.Lock()
+	if c.MapFinished < c.MapAmount {
+		taskIndex := -1
+		for index, value := range c.MapStatus {
+			if value == 0 {
+				taskIndex = index
+				break
+			}
+		}
+		if taskIndex == -1 {
+			ask.TaskType = 2
+		} else {
+			ask.TaskType = 0
+			ask.FileName = c.FileNames[taskIndex]
+			ask.FileSequence = taskIndex
+			ask.Buckets = c.ReduceAmount
+			//fmt.Println("Coor map task " + strconv.Itoa(taskIndex) + " allo")
+			c.MapStatus[taskIndex] = 1
+			go func() {
+				defer c.mutex.Unlock()
+				time.Sleep(time.Second * time.Duration(10))
+				c.mutex.Lock()
+				if c.MapStatus[taskIndex] == 1 {
+					c.MapStatus[taskIndex] = 0
+				}
+			}()
+		}
+	} else if c.MapFinished == c.MapAmount && c.ReduceFinished < c.ReduceAmount {
+		taskIndex := -1
+		for index, value := range c.ReduceStatus {
+			if value == 0 {
+				taskIndex = index
+				break
+			}
+		}
+		if taskIndex == -1 {
+			ask.TaskType = 2
+		} else {
+			ask.TaskType = 1
+			ask.ReduceSequence = taskIndex
+			ask.Buckets = c.ReduceAmount
+			ask.FileAmount = len(c.FileNames)
+
+			c.ReduceStatus[taskIndex] = 1
+			//fmt.Println("Coor reduce task " + strconv.Itoa(ask.ReduceSequence) + " allo!")
+			go func() {
+				defer c.mutex.Unlock()
+				time.Sleep(time.Second * time.Duration(10))
+				c.mutex.Lock()
+				if c.ReduceStatus[taskIndex] == 1 {
+					c.ReduceStatus[taskIndex] = 0
+				}
+			}()
+		}
+	} else {
+		// All jobs done.
+		ask.TaskType = 3
+	}
+	//if ask.TaskType == 1 {
+	//	fmt.Println("Leave out ", ask.ReduceSequence)
+	//}
+	return nil
+}
+
+//
+// an example RPC handler.
+//
+// the RPC argument and reply types are defined in rpc.go.
+//
+func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
+	reply.Y = args.X + 1
+	return nil
+}
+
+//
 // start a thread that listens for RPCs from worker.go
+//
 func (c *Coordinator) server() {
 	rpc.Register(c)
 	rpc.HandleHTTP()
 	//l, e := net.Listen("tcp", ":1234")
-	sockname := coordinatorSock() // I am a string. The string is made by system. You can render it as fixed. ZYX
-	os.Remove(sockname)           // Maybe for remove last rested file? ZYX
+	sockname := coordinatorSock()
+	os.Remove(sockname)
 	l, e := net.Listen("unix", sockname)
 	if e != nil {
 		log.Fatal("listen error:", e)
@@ -120,27 +135,28 @@ func (c *Coordinator) server() {
 	go http.Serve(l, nil)
 }
 
+//
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
+//
 func (c *Coordinator) Done() bool {
-	return c.fileReduced == len(c.files)
+	//fmt.Println("Coor finish!")
+	return c.ReduceFinished == c.ReduceAmount
 }
 
+//
 // create a Coordinator.
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
+//
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
-	// First we call this function out of this package. ZYX
 	c := Coordinator{}
-	c.fileMapped = 0
-	c.fileReduced = 0
-	c.reduceStates = make([]int, len(files))
-	c.mapStates = make([]int, len(files))
-	c.nReduce = nReduce
-	for _, filename := range files {
-		c.files = append(c.files, filename)
-	}
-	//fmt.Println(c.files)
+	// Your code here.
+	c.FileNames = files
+	c.MapAmount = len(files)
+	c.MapStatus = make([]int, c.MapAmount)
+	c.ReduceAmount = nReduce
+	c.ReduceStatus = make([]int, nReduce)
 	c.server()
 	return &c
 }
