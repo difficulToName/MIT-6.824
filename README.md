@@ -1,7 +1,7 @@
 # MIT 6.824 NOTE
 ## By Zhang LuYao from DHU 2024.11.01
 
-### 11.01 Read mrsequential.go and mark some instructions on it.
+### 11.01 Read mrsequential.go and mark some hints on it.
 #### Explain were added behind the line of code and marked with ZYX. 
 
 Question: What is the internal of the dynamic file "wc.so", I have known the signature of mapf and reducef.
@@ -48,7 +48,17 @@ Now our task is figure out what map and what is reduce, now the only thing we kn
 2. Pointer 2 should less than or equal to Pointer 1.
 3. When Pointer 1 equals len(filename) all job get done.
 
-今晚太饿了就写到这
 
-### 11.04 Lab 1 finish!
+### 11.06 Lab 1 finish!
+The implementation before yesterday was legal in some degree. However that method can not handle some scenario like "worker died" or "worker
+ failed to map or reduce" so we have to design a function and add a feature to let coordinator supervise the status of worker.
+
+For coordinator, coordinator records a task's status, whether it was mapped or reduced, mapping or reducing. Whenever a worker picks up a task. 
+Coordinator starts a goroutine then count 10 seconds to check if worker changes the status of current task. If the status of current task is still 
+doing(like mapping or reducing), that means worker died or sth went wrong. So goroutine would manipulate that state to origin state(to be mapped or to be reduced).
+
+Next let's talk about worker, how does a worker report "I have finish my current job" to coordinator? The answer is through go/rpc. After the job gets done, 
+the worker call the corresponding function provided by coordinator, then coordinator would change that tasks state. So even goroutine checks the status of 
+that task, goroutine wouldn't manipulate that task's status to (To be done).
+
 
