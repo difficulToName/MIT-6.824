@@ -8,7 +8,7 @@ Question: What is the internal of the dynamic file "wc.so", I have known the sig
 If they take "value" as time that word show up, why they don't use integer type as input?
 
 :) FUCK ME! The wc.so have source code. Just under dir "mrapps".
-The implementation is same as I thought, they use Itoa func, namely, turn a integer into string. 
+The implementation is same as I thought, they use Itoa func, namely, turn an integer into string. 
 But why they didn't just use this function directly but use a dynamic lib?
 
 #### Implement a distributed Mapreduce system.
@@ -40,7 +40,7 @@ Worker: To mapping and reducing.
 Here we start the task! From MapReduce can we know: coordinator should split file into pieces and tell workers come in which file should they handle.
 
 ### 11.03 Get rpc job done, now two process could communicate through rpc.
-Now our task is figure out what map and what is reduce, now the only thing we know is the workers takes charge for map and reduce process. Now I have a good
+Now our task is figure out what map and what is "reduce", now the only thing we know is the workers takes charge for map and reduce process. Now I have a good
  plan. First let's talk about worker. Workers are charge for both mapping and reducing. But there exist a sequence, namely, first map, then reduce. So let's use a slice
  to store all filename. Then we declare two integer and use them as pointer. First pointer illustrates "Next file to be mapped", second one illustrates "Next file to be reduced".
  That is easy to see:
@@ -50,15 +50,20 @@ Now our task is figure out what map and what is reduce, now the only thing we kn
 
 
 ### 11.06 Lab 1 finish!
-The implementation before yesterday was legal in some degree. However that method can not handle some scenario like "worker died" or "worker
+The implementation before yesterday was legal in some degree. However, that method can not handle some scenario like "worker died" or "worker
  failed to map or reduce" so we have to design a function and add a feature to let coordinator supervise the status of worker.
 
 For coordinator, coordinator records a task's status, whether it was mapped or reduced, mapping or reducing. Whenever a worker picks up a task. 
 Coordinator starts a goroutine then count 10 seconds to check if worker changes the status of current task. If the status of current task is still 
 doing(like mapping or reducing), that means worker died or sth went wrong. So goroutine would manipulate that state to origin state(to be mapped or to be reduced).
 
-Next let's talk about worker, how does a worker report "I have finish my current job" to coordinator? The answer is through go/rpc. After the job gets done, 
-the worker call the corresponding function provided by coordinator, then coordinator would change that tasks state. So even goroutine checks the status of 
+Next let's talk about worker, how does a worker report "I have finished my current job" to coordinator? The answer is through go/rpc. After the job gets done, 
+the worker call the corresponding function provided by coordinator, then coordinator would change that tasks status. So even goroutine checks the status of 
 that task, goroutine wouldn't manipulate that task's status to (To be done).
 
-
+### 11.10 Read paper and hints. Lab 2A
+For a server, it could only be at 3 status: follower, candidate or leader. When init a raft consensus, all server are be "follower" 
+, they all have a timer to check last time it receives a rpc from leader, when that expires, it would increment its term and motivates 
+other servers to vote for him. (The condition to convert from follower to leader is still unknown.) Suppose this server becomes leader. 
+It should send signal periodically to inform its follower: "I am still alive and none of u dare to rebel!"
+The method and detail can be found in hints and papers. 
