@@ -67,3 +67,10 @@ For a server, it could only be at 3 status: follower, candidate or leader. When 
 other servers to vote for him. (The condition to convert from follower to leader is still unknown.) Suppose this server becomes leader. 
 It should send signal periodically to inform its follower: "I am still alive and none of u dare to rebel!"
 The method and detail can be found in hints and papers. 
+
+### 11.11 Try to finish Lab 2A
+In this lab, we have to implement two functions. One for transmit heartbeat signal from leader to followers. One for election, take charges for 
+vote communicate between candidate and followers.
+When consensus is at voting, followers will turn to candidate automatically when timer expires. Then it will ask other server to vote for him. As soon as 
+it got votes amount greater than half amount of servers. It turns to leader and send AppendEntire RPC message to other servers. Server whose term not greater than 
+leader's term should be his follower. Leader should send RPC periodically to his followers.
