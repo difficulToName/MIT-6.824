@@ -73,4 +73,10 @@ In this lab, we have to implement two functions. One for transmit heartbeat sign
 vote communicate between candidate and followers.
 When consensus is at voting, followers will turn to candidate automatically when timer expires. Then it will ask other server to vote for him. As soon as 
 it got votes amount greater than half amount of servers. It turns to leader and send AppendEntire RPC message to other servers. Server whose term not greater than 
-leader's term should be his follower. Leader should send RPC periodically to his followers.
+leader's term should be his follower. Leader should send RPC periodically to his followers. Our thought is legal however we just can not pass the test.
+
+### 11.12 Test Lab 2A passed
+We added some fmt.Println in code and test code to find where the error is. The information given by tester is that servers have different terms. However, we, as a leader, had told 
+follower servers to change their term they had already known. That's so wierd.
+
+Through debugging we found the parameter latestTerm in heartbeat package, which after a server changed itself to leader sent had been wrongly set. After fix that bug we pass the test.

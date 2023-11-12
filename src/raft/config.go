@@ -440,7 +440,7 @@ func (cfg *config) checkOneLeader() int {
 		lastTermWithLeader := -1
 		for term, leaders := range leaders {
 			if len(leaders) > 1 {
-				cfg.t.Fatalf("term %d has %d (>1) leaders", term, len(leaders))
+				cfg.t.Fatalf("Term %d has %d (>1) leaders", term, len(leaders))
 			}
 			if term > lastTermWithLeader {
 				lastTermWithLeader = term
@@ -455,16 +455,19 @@ func (cfg *config) checkOneLeader() int {
 	return -1
 }
 
-// check that everyone agrees on the term.
+// check that everyone agrees on the Term.
 func (cfg *config) checkTerms() int {
 	term := -1
+	//fmt.Println("Now test runs!")
 	for i := 0; i < cfg.n; i++ {
 		if cfg.connected[i] {
 			xterm, _ := cfg.rafts[i].GetState()
 			if term == -1 {
 				term = xterm
+				//fmt.Println(i, "term is", xterm)
 			} else if term != xterm {
-				cfg.t.Fatalf("servers disagree on term")
+				//fmt.Println(i, term, xterm) //
+				cfg.t.Fatalf("servers disagree on Term")
 			}
 		}
 	}
