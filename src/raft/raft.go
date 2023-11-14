@@ -56,7 +56,13 @@ type AppendEntriesArgs struct {
 	Term     int // The Term of leader
 	LeaderId int
 	// There maybe some another args in this struct
-
+	// 11.13 Here we need some data structure to store log info in this struct and send through Go/rpc
+	// Whether log is empty, follower should always upgrade its timer and term.
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []interface{} // We still don't know which data type should entries should store.
+	// Above is the log info we have to store.
+	LeaderCommit int // The latest index of leader committed
 }
 
 type AppendEntriesReply struct {
@@ -78,13 +84,14 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 	// Persistent status
-	myTerm                int       // Increment only.
-	myState               int       // 0 for follower || 1 for candidate || 2 for leader
-	rpcFromLeaderLastTime time.Time // only available as follower
-	votedFor              int       // To save which server he had Voted for.
-
+	myTerm                int           // Increment only.
+	myState               int           // 0 for follower || 1 for candidate || 2 for leader
+	rpcFromLeaderLastTime time.Time     // only available as follower
+	votedFor              int           // To save which server he had Voted for.
+	myChannel             chan ApplyMsg // This channel is for communicate between peer server.
 	// Volatile status
-
+	lastLogCommitted int // To memory the index of the latest log to be committed (Commit could only happen on leader server)
+	lastLogApplied   int // To memory the index of the latest log to be applied on state machine (On this machine)
 }
 
 // return currentTerm and whether this server
@@ -208,7 +215,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // can't be reached, a lost request, or a lost reply.
 //
 // Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
+// handler function on the server side does not return. Thus there
 // is no need to implement your own timeouts around Call().
 //
 // look at the comments in ../labrpc/labrpc.go for more details.
@@ -271,13 +278,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // Term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	//index := -1
+	//term := -1
+	//isLeader := true
 
 	// Your code here (2B).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
-	return index, term, isLeader
+	return 0, 0, rf.myState == 2
+
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,

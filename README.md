@@ -80,3 +80,20 @@ We added some fmt.Println in code and test code to find where the error is. The 
 follower servers to change their term they had already known. That's so wierd.
 
 Through debugging we found the parameter latestTerm in heartbeat package, which after a server changed itself to leader sent had been wrongly set. After fix that bug we pass the test.
+
+### 11.13 Lab 2B. Read paper and figure some fundamentals
+Here, Lab 2B, we should implement this lab. Next I will write down some fundamentals to help u ease yourself into it.
+
+In a raft consensus, all "write" command should be handled by master/leader node(server), and a read request could be handled by any server using raft. 
+After leader get some command like "write", leader should send replication command to its followers, after the majority of followers had acknowledged that they had store or save 
+that command/log, leader server could reply to the client: "Your command is implemented!".
+
+In this Lab we will focus on how control communications between leader and its followers. Here are some details: 
+1. If any of follower crashes or packet lose which causes follower didn't reply, leader should retry send packet or call rpc indefinitely. Even after it has responded to client until follower 
+store all logs.
+2. Any request packet should have at least two information: the term of current leader and the log information. We all know the term number plays a significant role to refrain its follower 
+start next turn of vote. In another hand, it acts as a timestamp to let followers know whether this is the latest log it should accept.
+3. Any packet should have a integer index to identify its position.
+4. Like rule 1, leader node should commit a log entry after the majority of follower acknowledged that log. And that log should be marked with "committed".
+5. Leader should maintain an integer which illustrates the latest index of log it had committed, and this parameter should be involved in the AppendEntries RPC.
+
